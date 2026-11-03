@@ -12,8 +12,8 @@ ação (ex.: PETR4) a partir do histórico diário?
 | Etapa | O que faz | Status |
 |---|---|---|
 | 1. Extração | baixa o histórico diário da Alpha Vantage | ✅ pronta (sem proxy) |
-| 2. Transformação e limpeza | duplicatas, validação, faltantes, outliers, escala | ⏳ |
-| 3. Carga | grava os dados limpos em SQLite (upsert) | ⏳ |
+| 2. Transformação e limpeza | duplicatas, faltantes, validação, outliers, escala do volume | ✅ pronta (básica, sem proxy) |
+| 3. Carga | grava os dados limpos em SQLite (upsert) | ⏳ próxima |
 | 4. Modelagem | random walk × médias móveis, métricas MAE/RMSE | ⏳ |
 | 5. Visualização | gráfico real × previsto (PNG/HTML) + CSV | ⏳ |
 
@@ -24,6 +24,8 @@ ação (ex.: PETR4) a partir do histórico diário?
 | `main` | pipeline "normal", **sem proxy** (o "antes") |
 | `proxy-bom` | `main` + proxy na Extração (cache, validação da chave, lazy loading, retry) |
 | `proxy-ruim` | `main` + proxy na Transformação que só repassa a chamada (indireção sem função) |
+
+Os proxies entram **só depois que o pipeline inteiro estiver pronto** no `main`.
 
 ## Fonte de dados: Alpha Vantage
 
@@ -63,9 +65,14 @@ Saída esperada:
 
 ```
  PETR4.SAO:  100 linhas de 2026-06-11 a 2026-10-30
+limpeza: 0 duplicadas removidas, 0 valores imputados, 0 linhas inválidas, 2 outliers
 chamadas_reais=1
-tempo[extracao]=0.854s
+tempo[extracao]=0.589s
+tempo[transformacao]=0.008s
 ```
+
+A limpeza **marca** linhas inválidas e outliers (colunas `valida` e `outlier`),
+sem removê-las; só as duplicadas são removidas.
 
 Cada execução gasta **1 requisição por símbolo** da cota diária.
 
@@ -83,7 +90,8 @@ Principais variáveis do `.env` (lista completa em `.env.example`):
 main.py                    # monta e executa o pipeline
 src/pipeline_proxy/
 ├── extracao/              # etapa 1 (cliente da API, extrator, estado incremental)
-├── transformacao/ carga/ modelagem/ visualizacao/   # etapas 2–5 (a fazer)
+├── transformacao/         # etapa 2 (limpeza + escala do volume)
+├── carga/ modelagem/ visualizacao/   # etapas 3–5 (a fazer)
 ├── nucleo/etapa.py        # contrato comum das etapas + orquestrador
 ├── dominio.py             # formato dos dados que passa entre as etapas
 ├── erros.py · config.py

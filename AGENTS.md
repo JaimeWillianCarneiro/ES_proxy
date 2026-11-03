@@ -50,22 +50,30 @@ uv run python main.py            # roda o pipeline contra a API real
 
 ## Estado atual do `main` (03/11/2026)
 
-**Etapa 1 — Extração: implementada, do jeito normal (sem proxy).**
+| Etapa | Situação |
+|---|---|
+| 1. Extração | ✅ pronta, do jeito normal (sem proxy) |
+| 2. Transformação e limpeza | ✅ pronta, versão básica (sem proxy) |
+| 3. Carga | ⏳ próxima |
+| 4. Modelagem | ⏳ |
+| 5. Visualização | ⏳ |
 
-- `uv run pytest` → 24 testes passando, offline (fixtures em `tests/fixtures/`).
-- `uv run python main.py` → busca a série e imprime linhas por símbolo,
-  intervalo de datas, `chamadas_reais` e `tempo[extracao]`.
-  Testado com `IBM` (chave `demo`) e `PETR4.SAO` (chave própria): 100 pregões, 1 chamada real.
+- `uv run pytest` → 41 testes passando, offline (fixtures em `tests/fixtures/`).
+- `uv run python main.py` → roda `Pipeline([EtapaExtracao, EtapaTransformacao])`
+  e imprime linhas por símbolo, o resumo da limpeza, `chamadas_reais` e o tempo
+  de cada etapa. Exemplo real com `PETR4.SAO`: 100 linhas, 0 duplicadas,
+  0 imputadas, 0 inválidas, 2 outliers marcados.
 - **Toda execução faz uma requisição nova por símbolo** (não há cache nem banco).
   O cache é a tarefa A; o banco é a Carga (etapa 3).
 - O único arquivo gravado é `dados/estado.json` (última data extraída por
   símbolo, usada pelo modo incremental).
+- O resultado da limpeza ainda **não é salvo**: só vive em memória até a Carga existir.
 
 ### Como o código está organizado
 
 ```
 ES_proxy/
-├── main.py                       # criar_fonte(): ÚNICO lugar que escolhe a FonteDados
+├── main.py                       # monta o pipeline: escolhe a FonteDados e a Escala de cada etapa
 ├── .env.example                  # copiar para .env (chave, símbolos, modo, retry)
 ├── src/pipeline_proxy/
 │   ├── config.py                 # Config + PoliticaRetry (já pronta para o proxy usar)
@@ -77,12 +85,15 @@ ES_proxy/
 │   │   ├── alpha_vantage.py      # AlphaVantageClient  (RealSubject)
 │   │   ├── estado.py             # watermark do modo incremental
 │   │   └── extrator.py           # EtapaExtracao (só conhece FonteDados)
-│   ├── transformacao/            # vazio — etapa 2
+│   ├── transformacao/
+│   │   ├── limpeza.py            # funções puras: deduplicar, imputar, marcar inválidas/outliers
+│   │   ├── escala.py             # Escala (ABC), EscalaLog, EscalaMinMax
+│   │   └── etapa.py              # EtapaTransformacao + ResumoTransformacao + COLUNAS_LIMPAS
 │   ├── carga/                    # vazio — etapa 3
 │   ├── modelagem/                # vazio — etapa 4
 │   └── visualizacao/             # vazio — etapa 5
 ├── dados/                        # gerado em runtime (no .gitignore)
-└── tests/                        # fakes.py (FonteFake) + testes
+└── tests/                        # fakes.py (FonteFake) + testes por etapa
 ```
 
 ### Contratos que as próximas etapas devem respeitar
@@ -94,6 +105,13 @@ ES_proxy/
   (tipos fixos, ordenado por data). Chave natural: `(simbolo, data)`.
 - **A Extração não limpa nada** (não deduplica, não imputa, não valida). Isso é
   trabalho da Transformação.
+- **Dados limpos:** a Transformação devolve **um** `pd.DataFrame` com todos os
+  símbolos, ordenado por `(simbolo, data)`, sem duplicatas, com as colunas
+  `COLUNAS_LIMPAS` = brutas + `valida` (bool), `retorno` (variação diária do
+  close, NaN na 1ª linha de cada símbolo), `outlier` (bool) e `volume_escalado`.
+  Nenhuma linha é removida além das duplicadas: inválidas e outliers são só
+  **marcados**, e cabe a quem consome decidir se filtra.
+  Contagens ficam em `EtapaTransformacao.resumo` (`ResumoTransformacao`).
 - **Erros:** `ErroTransitorio` (inclui `ErroLimiteRequisicoes`) = vale repetir;
   `ErroPermanente` (inclui `ErroAutenticacao`, `ErroCotaEsgotada`) = não vale.
   A Alpha Vantage responde HTTP 200 mesmo em erro; a mensagem vem no corpo.
@@ -159,49 +177,59 @@ ES_proxy/
 
 ## Tarefa B — Proxy RUIM na Transformação (branch `proxy-ruim`)
 
-**Depende de:** etapa 2 (Transformação) pronta no `main`.
+**Pode começar:** a Transformação já existe no `main`. Mas o combinado é
+fazer os proxies **só depois que o pipeline inteiro estiver pronto** no `main`.
 
-- Criar `transformacao/proxy_escala.py` com um `EscalaProxy` que tem a mesma
-  interface do escalador usado na Transformação e só repassa a chamada para ele.
+- O ponto de encaixe já existe: `EtapaTransformacao(escala_volume=...)` em
+  `main.py` recebe um objeto `Escala` (`transformacao/escala.py`). Hoje é
+  `EscalaLog()`.
+- Criar `transformacao/proxy_escala.py` com `EscalaProxy(Escala)`, que guarda
+  uma `EscalaLog` e só repassa `transformar()` para ela.
 - Usar o proxy no lugar do escalador real (por flag no `.env`, como na tarefa A).
+  **Não deve mudar:** `EtapaTransformacao` e `limpeza.py`.
 - **Mostrar na demo que nada muda:** mesma saída (um teste comparando os
   DataFrames), mesmo tempo e nenhuma das razões do Proxy presente (sem rede, sem
   cota, sem permissão, criar o objeto real é trivial). É indireção sem função.
 - Ponto para a apresentação: se o objetivo for poder trocar a técnica de
-  escala, o padrão certo é o **Strategy**, não o Proxy.
+  escala, o padrão certo é o **Strategy**, e ele **já está lá**: `Escala` com
+  `EscalaLog`/`EscalaMinMax` intercambiáveis. O proxy não acrescenta nada.
 
 ---
 
 ## Pipeline normal — próximas etapas (no `main`, sem proxy)
 
-### 2. Transformação e Limpeza — `transformacao/`
+### 2. ✅ Transformação e Limpeza — `transformacao/` (versão básica concluída)
 
-`EtapaTransformacao`: `list[LoteExtracao] -> pd.DataFrame` limpo (todos os símbolos juntos).
+`EtapaTransformacao(escala_volume, limiar_outlier_z=3.0)`:
+`list[LoteExtracao] -> pd.DataFrame` limpo (todos os símbolos juntos).
 
-Ordem sugerida:
-1. **Deduplicação** por `(simbolo, data)`, mantendo a última ocorrência.
-2. **Validação:**
-   - `high >= max(open, close)`, `low <= min(open, close)`, `volume >= 0`;
-   - datas crescentes por símbolo;
-   - linha inválida é **marcada** (coluna `valida`), não removida.
-3. **Imputação:**
-   - forward-fill só em valores `NaN` (não interpolar preço);
-   - não criar linhas para feriados ou fins de semana.
-4. **Outliers:** `retorno = close.pct_change()` por símbolo; `|z| > 3` → coluna `outlier = True` (marcar, não remover).
-5. **Escala:** `log_volume = log1p(volume)`, feita por um objeto escalador (ex.:
-   `EscalaLog` / `EscalaMinMax`) recebido no construtor. É nesse ponto que a
-   tarefa B vai encaixar o proxy ruim.
-6. **Codificação:** dia da semana cíclico (`dia_sen`, `dia_cos`), se for usado como feature.
+Ordem implementada (`etapa.py`, funções em `limpeza.py`):
+1. **Juntar** os lotes num só DataFrame (`juntar_lotes`).
+2. **Deduplicar** por `(simbolo, data)`, mantendo a última ocorrência.
+3. **Imputar:** forward-fill só em preços `NaN`, por símbolo. Não cria linhas
+   para feriados ou fins de semana e não interpola.
+4. **Validar:** `high >= max(open, close)`, `low <= min(open, close)`,
+   `volume >= 0` e preços preenchidos → coluna `valida` (marca, não remove).
+5. **Outliers:** `retorno = close.pct_change()` por símbolo; `|z| > 3` →
+   coluna `outlier` (marca, não remove).
+6. **Escalar** o volume com a `Escala` recebida → `volume_escalado`.
 
-**Testes:**
-- criar fixtures "sujas" em `tests/fixtures/`, porque a da IBM está limpa: linhas duplicadas, `high < low`, `NaN` e um salto de preço;
-- testar cada passo isolado e a etapa inteira.
+Testes em `tests/test_transformacao.py`. Os dados sujos (duplicadas, `NaN`,
+`high < open`, salto de preço) são montados no próprio teste com `criar_lote()`,
+porque a resposta da API (um JSON indexado por data) não consegue ter duplicatas.
 
-**Pronto quando:**
-- `main.py` roda `Pipeline([EtapaExtracao(...), EtapaTransformacao(...)])`;
-- o resumo mostra quantas linhas foram deduplicadas, marcadas como inválidas e como outliers.
+Limitações conhecidas (melhorias futuras, se quiserem):
+- No modo `incremental` só chegam os dias novos, então o `retorno` do 1º dia
+  novo fica `NaN` e o z-score usa poucos pontos. Isso se resolve quando a Carga
+  existir: dá para ler o histórico do banco.
+- Não verifica "buracos" de datas (pregões faltando); a validação é por linha.
+- Codificação de dia da semana (seno/cosseno) ficou para a Modelagem, se for usada como feature.
 
-### 3. Carga — `carga/`
+### 3. Carga — `carga/` (próximo passo)
+
+`EtapaCarga`: recebe o `pd.DataFrame` limpo da Transformação (`COLUNAS_LIMPAS`)
+e devolve o que a Modelagem vai consumir (sugestão: o DataFrame lido de volta do
+banco, com todo o histórico do símbolo, não só o lote atual).
 
 - SQLite em `dados/pipeline.sqlite`, tabela `cotacoes` com
   `PRIMARY KEY (simbolo, data)`.
@@ -236,7 +264,7 @@ Ordem sugerida:
 ```python
 Pipeline([
     EtapaExtracao(fonte, estado),     # fonte = cliente real (main) ou proxy (proxy-bom)
-    EtapaTransformacao(escala, ...),  # escala = real (main) ou EscalaProxy (proxy-ruim)
+    EtapaTransformacao(escala_volume),  # EscalaLog (main) ou EscalaProxy (proxy-ruim)
     EtapaCarga(...),
     EtapaModelagem(...),
     EtapaVisualizacao(...),
