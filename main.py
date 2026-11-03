@@ -1,36 +1,49 @@
 """Ponto de entrada do pipeline.
 
-`criar_fonte()` é o único lugar que sabe qual implementação de FonteDados está
-em uso. É aqui que o proxy vai entrar no lugar do cliente real.
+É aqui que as dependências de cada etapa são escolhidas:
+- `criar_fonte()` decide a FonteDados (é onde o proxy bom vai entrar);
+- `EtapaTransformacao(escala_volume=...)` recebe o escalador (é onde o proxy
+  ruim vai entrar).
 """
 
 from __future__ import annotations
 
 import logging
 
+import pandas as pd
+
 from pipeline_proxy.config import Config, carregar_config
-from pipeline_proxy.dominio import LoteExtracao, RequisicaoExtracao
+from pipeline_proxy.dominio import RequisicaoExtracao
 from pipeline_proxy.extracao.alpha_vantage import AlphaVantageClient
 from pipeline_proxy.extracao.estado import RepositorioEstadoJson
 from pipeline_proxy.extracao.extrator import EtapaExtracao
 from pipeline_proxy.extracao.fonte import FonteDados
 from pipeline_proxy.nucleo.etapa import Pipeline
+from pipeline_proxy.transformacao.escala import EscalaLog
+from pipeline_proxy.transformacao.etapa import EtapaTransformacao, ResumoTransformacao
 
 
 def criar_fonte(config: Config) -> FonteDados:
     return AlphaVantageClient(config.api_key, timeout_s=config.timeout_s)
 
 
-def imprimir_resumo(lotes: list[LoteExtracao]) -> None:
-    for lote in lotes:
-        if lote.vazio:
-            print(f"{lote.simbolo:>10}: 0 linhas novas")
+def imprimir_resumo(
+    simbolos: tuple[str, ...], dados: pd.DataFrame, limpeza: ResumoTransformacao
+) -> None:
+    for simbolo in simbolos:
+        datas = dados.loc[dados["simbolo"] == simbolo, "data"]
+        if datas.empty:
+            print(f"{simbolo:>10}: 0 linhas novas")
             continue
-        datas = lote.dados["data"]
         print(
-            f"{lote.simbolo:>10}: {len(lote.dados):4d} linhas "
+            f"{simbolo:>10}: {len(datas):4d} linhas "
             f"de {datas.min():%Y-%m-%d} a {datas.max():%Y-%m-%d}"
         )
+    print(
+        f"limpeza: {limpeza.duplicadas_removidas} duplicadas removidas, "
+        f"{limpeza.valores_imputados} valores imputados, "
+        f"{limpeza.invalidas} linhas inválidas, {limpeza.outliers} outliers"
+    )
 
 
 def main() -> None:
@@ -39,13 +52,14 @@ def main() -> None:
 
     fonte = criar_fonte(config)
     estado = RepositorioEstadoJson(config.dir_dados / "estado.json")
-    pipeline = Pipeline([EtapaExtracao(fonte, estado)])
+    transformacao = EtapaTransformacao(escala_volume=EscalaLog())
+    pipeline = Pipeline([EtapaExtracao(fonte, estado), transformacao])
 
-    lotes = pipeline.executar(
+    dados = pipeline.executar(
         RequisicaoExtracao(simbolos=config.simbolos, modo=config.modo, tamanho=config.tamanho)
     )
 
-    imprimir_resumo(lotes)
+    imprimir_resumo(config.simbolos, dados, transformacao.resumo)
     if isinstance(fonte, AlphaVantageClient):
         print(f"chamadas_reais={fonte.chamadas_reais}")
     for nome, segundos in pipeline.tempos_s.items():

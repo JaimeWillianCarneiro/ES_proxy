@@ -5,6 +5,7 @@ description = "Pipeline de dados (Alpha Vantage) para demonstrar o design patter
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "numpy>=2.0",
     "pandas>=2.2",
     "python-dotenv>=1.0",
     "requests>=2.32",

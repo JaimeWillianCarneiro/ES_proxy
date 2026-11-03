@@ -1,1 +1,1 @@
-"""Etapa futura do pipeline (ainda não implementada)."""
+"""Etapa 2 do pipeline: transformação e limpeza dos dados brutos."""
