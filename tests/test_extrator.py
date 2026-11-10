@@ -4,7 +4,7 @@ import pandas as pd
 
 from fakes import FonteFake, carregar_fixture
 from pipeline_proxy.dominio import ModoExtracao, RequisicaoExtracao
-from pipeline_proxy.extracao.estado import RepositorioEstadoJson, RepositorioEstadoMemoria
+from pipeline_proxy.extracao.estado import RepositorioEstadoMemoria
 from pipeline_proxy.extracao.extrator import EtapaExtracao
 
 
@@ -32,44 +32,42 @@ def test_modo_completo_traz_tudo_mesmo_com_watermark():
     assert len(lote.dados) == 100
 
 
-def test_incremental_sem_watermark_traz_tudo_e_grava_watermark():
+def test_incremental_sem_watermark_traz_tudo():
+    """Sem watermark prévia, o modo incremental deve trazer todos os dados disponíveis."""
     estado = RepositorioEstadoMemoria()
     etapa, _ = criar_etapa(estado)
 
     (lote,) = etapa.executar(RequisicaoExtracao(simbolos=("IBM",), modo=ModoExtracao.INCREMENTAL))
 
     assert len(lote.dados) == 100
-    assert estado.obter("IBM") == lote.dados["data"].max().date()
+    # A verificação de gravação foi movida para os testes da EtapaCarga
 
 
 def test_incremental_traz_so_datas_posteriores_a_watermark():
+    """Valida o filtro do extrator respeitando a watermark configurada no repositório."""
     estado = RepositorioEstadoMemoria()
     etapa, _ = criar_etapa(estado)
-    req = RequisicaoExtracao(simbolos=("IBM",), modo=ModoExtracao.INCREMENTAL)
-    (completo,) = etapa.executar(req)
+    req_completa = RequisicaoExtracao(simbolos=("IBM",), modo=ModoExtracao.COMPLETA)
+    (completo,) = etapa.executar(req_completa)
 
     corte = completo.dados["data"].iloc[-4].date()  # deixa 3 datas depois do corte
     estado.salvar("IBM", corte)
-    (lote,) = etapa.executar(req)
+
+    req_incremental = RequisicaoExtracao(simbolos=("IBM",), modo=ModoExtracao.INCREMENTAL)
+    (lote,) = etapa.executar(req_incremental)
 
     assert len(lote.dados) == 3
     assert (lote.dados["data"] > pd.Timestamp(corte)).all()
 
 
-def test_segunda_execucao_incremental_nao_traz_nada():
-    etapa, _ = criar_etapa()
-    req = RequisicaoExtracao(simbolos=("IBM",), modo=ModoExtracao.INCREMENTAL)
+def test_incremental_com_watermark_na_data_maxima_nao_traz_nada():
+    """Se a watermark já estiver na última data existente, nada deve ser retornado."""
+    estado = RepositorioEstadoMemoria()
+    etapa, _ = criar_etapa(estado)
+    (completo,) = etapa.executar(RequisicaoExtracao(simbolos=("IBM",), modo=ModoExtracao.COMPLETA))
 
-    etapa.executar(req)
-    (lote,) = etapa.executar(req)
+    # Simula o estado gravado pela carga com a data mais recente
+    estado.salvar("IBM", completo.dados["data"].max().date())
 
+    (lote,) = etapa.executar(RequisicaoExtracao(simbolos=("IBM",), modo=ModoExtracao.INCREMENTAL))
     assert lote.vazio
-
-
-def test_watermark_persiste_em_json(tmp_path):
-    caminho = tmp_path / "estado.json"
-    etapa, _ = criar_etapa(RepositorioEstadoJson(caminho))
-
-    (lote,) = etapa.executar(RequisicaoExtracao(simbolos=("IBM",)))
-
-    assert RepositorioEstadoJson(caminho).obter("IBM") == lote.dados["data"].max().date()

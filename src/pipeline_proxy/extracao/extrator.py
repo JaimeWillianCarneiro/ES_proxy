@@ -38,10 +38,5 @@ class EtapaExtracao:
             novos = lote.dados[lote.dados["data"] > pd.Timestamp(ultima_extraida)]
             lote = replace(lote, dados=novos.reset_index(drop=True))
 
-        # TODO(carga): quando a Carga existir, salvar a watermark só depois de
-        # gravar os dados, para não perder linhas se a carga falhar.
-        if not lote.vazio:
-            self._estado.salvar(simbolo, lote.dados["data"].max().date())
-
         log.info("%s: %d linhas (%s)", simbolo, len(lote.dados), req.modo)
         return lote

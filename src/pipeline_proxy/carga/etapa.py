@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 import pandas as pd
 
+from pipeline_proxy.extracao.estado import RepositorioEstado
 from pipeline_proxy.nucleo.etapa import Etapa
 
 
@@ -43,8 +44,13 @@ ON CONFLICT(simbolo, data) DO UPDATE SET
 
 
 class EtapaCarga(Etapa[pd.DataFrame, pd.DataFrame]):
-    def __init__(self, caminho_banco: Path | str) -> None:
+    def __init__(
+        self,
+        caminho_banco: Path | str,
+        estado: RepositorioEstado | None = None,
+    ) -> None:
         self.caminho_banco = Path(caminho_banco)
+        self.estado = estado
         self.linhas_afetadas: int = 0
         self._inicializar_banco()
 
@@ -64,10 +70,8 @@ class EtapaCarga(Etapa[pd.DataFrame, pd.DataFrame]):
             return entrada
 
         df = entrada.copy()
-
-        # Garante data em texto ISO (YYYY-MM-DD)
-        if pd.api.types.is_datetime64_any_dtype(df["data"]):
-            df["data"] = df["data"].dt.strftime("%Y-%m-%d")
+        datas_dt = pd.to_datetime(df["data"])
+        df["data"] = datas_dt.dt.strftime("%Y-%m-%d")
 
         colunas = [
             "simbolo",
@@ -83,7 +87,6 @@ class EtapaCarga(Etapa[pd.DataFrame, pd.DataFrame]):
             "volume_escalado",
         ]
 
-        # Converte booleanos para inteiros (0/1) se necessário
         for col_bool in ("valida", "outlier"):
             if col_bool in df.columns:
                 df[col_bool] = df[col_bool].astype(int)
@@ -97,5 +100,11 @@ class EtapaCarga(Etapa[pd.DataFrame, pd.DataFrame]):
             cursor.executemany(UPSERT_SQL, registros)
             conn.commit()
             self.linhas_afetadas = cursor.rowcount
+
+        # Só atualiza a watermark SE a transação do banco foi concluída com sucesso
+        if self.estado is not None:
+            # Agrupa por símbolo e pega a maior data
+            for simbolo, max_data in datas_dt.groupby(df["simbolo"]).max().items():
+                self.estado.salvar(str(simbolo), max_data.date())
 
         return entrada
