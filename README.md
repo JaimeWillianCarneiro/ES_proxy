@@ -14,8 +14,8 @@ ação (ex.: PETR4) a partir do histórico diário?
 | 1. Extração | baixa o histórico diário da Alpha Vantage | ✅ pronta (sem proxy) |
 | 2. Transformação e limpeza | duplicatas, faltantes, validação, outliers, escala do volume | ✅ pronta (básica, sem proxy) |
 | 3. Carga | grava os dados limpos em SQLite (upsert) | ✅ pronta |
-| 4. Modelagem | random walk × médias móveis, métricas MAE/RMSE | ⏳ próxima |
-| 5. Visualização | gráfico real × previsto (PNG/HTML) + CSV | ⏳ |
+| 4. Modelagem | random walk × médias móveis, métricas MAE/RMSE | ✅ pronta |
+| 5. Visualização | gráfico real × previsto (PNG/HTML) + CSV | ⏳ próxima |
 
 ## Branches
 
