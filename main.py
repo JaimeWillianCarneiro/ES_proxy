@@ -21,10 +21,16 @@ from pipeline_proxy.nucleo.etapa import Pipeline
 from pipeline_proxy.transformacao.escala import EscalaLog
 from pipeline_proxy.transformacao.etapa import EtapaTransformacao, ResumoTransformacao
 from pipeline_proxy.carga.etapa import EtapaCarga
+from pipeline_proxy.modelagem.etapa import EtapaModelagem  
 
 def criar_fonte(config: Config) -> FonteDados:
     return AlphaVantageClient(config.api_key, timeout_s=config.timeout_s)
 
+def imprimir_metricas(modelagem: EtapaModelagem) -> None:
+    for simbolo, modelos in modelagem.resultado.metricas.items():
+        print(f"\n--- Métricas de Avaliação ({simbolo}) ---")
+        for nome_modelo, m in modelos.items():
+            print(f"{nome_modelo:>15}: MAE = {m.mae:.4f} | RMSE = {m.rmse:.4f}")
 
 def imprimir_resumo(
     simbolos: tuple[str, ...], dados: pd.DataFrame, limpeza: ResumoTransformacao
@@ -44,7 +50,6 @@ def imprimir_resumo(
         f"{limpeza.invalidas} linhas inválidas, {limpeza.outliers} outliers"
     )
 
-
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     config = carregar_config()
@@ -52,14 +57,16 @@ def main() -> None:
     fonte = criar_fonte(config)
     estado = RepositorioEstadoJson(config.dir_dados / "estado.json")
     transformacao = EtapaTransformacao(escala_volume=EscalaLog())
-    carga = EtapaCarga(config.dir_dados / "cotacoes.db")
-
-    pipeline = Pipeline([EtapaExtracao(fonte, estado),transformacao, carga])
+    carga = EtapaCarga(config.dir_dados / "cotacoes.db", estado=estado)
+    modelagem = EtapaModelagem(janela_media_movel=5)
+    
+    pipeline = Pipeline([EtapaExtracao(fonte, estado),transformacao, carga, modelagem])
     
     dados = pipeline.executar(
         RequisicaoExtracao(simbolos=config.simbolos, modo=config.modo, tamanho=config.tamanho)
     )
     imprimir_resumo(config.simbolos, dados, transformacao.resumo)
+    imprimir_metricas(modelagem)
     if isinstance(fonte, AlphaVantageClient):
         print(f"chamadas_reais={fonte.chamadas_reais}")
     for nome, segundos in pipeline.tempos_s.items():
@@ -68,3 +75,4 @@ def main() -> None:
    
 if __name__ == "__main__":
     main()
+
