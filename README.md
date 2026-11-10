@@ -15,7 +15,7 @@ ação (ex.: PETR4) a partir do histórico diário?
 | 2. Transformação e limpeza | duplicatas, faltantes, validação, outliers, escala do volume | ✅ pronta (básica, sem proxy) |
 | 3. Carga | grava os dados limpos em SQLite (upsert) | ✅ pronta |
 | 4. Modelagem | random walk × médias móveis, métricas MAE/RMSE | ✅ pronta |
-| 5. Visualização | gráfico real × previsto (PNG/HTML) + CSV | ⏳ próxima |
+| 5. Visualização | gráfico real × previsto (PNG/HTML) + CSV | ✅ pronta |
 
 ## Branches
 
@@ -64,11 +64,20 @@ uv run python main.py       # roda o pipeline
 Saída esperada:
 
 ```
- PETR4.SAO:  100 linhas de 2026-06-11 a 2026-10-30
-limpeza: 0 duplicadas removidas, 0 valores imputados, 0 linhas inválidas, 2 outliers
+IBM:  100 linhas de 2026-06-18 a 2026-11-09
+limpeza: 0 duplicadas removidas, 0 valores imputados, 0 linhas inválidas, 1 outliers
+
+--- Métricas de Avaliação (IBM) ---
+    random_walk: MAE = 4.5857 | RMSE = 8.9199
+    media_movel: MAE = 8.0599 | RMSE = 14.1340
+carga: 100 registros inseridos/atualizados no SQLite
+visualizacao: 2 arquivos gerados em dados
 chamadas_reais=1
-tempo[extracao]=0.589s
+tempo[extracao]=0.930s
 tempo[transformacao]=0.008s
+tempo[carga]=0.003s
+tempo[modelagem]=0.003s
+tempo[visualizacao]=0.412s
 ```
 
 A limpeza **marca** linhas inválidas e outliers (colunas `valida` e `outlier`),
