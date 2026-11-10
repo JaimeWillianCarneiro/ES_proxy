@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import logging
-
 import pandas as pd
 
 from pipeline_proxy.config import Config, carregar_config
@@ -21,7 +20,7 @@ from pipeline_proxy.extracao.fonte import FonteDados
 from pipeline_proxy.nucleo.etapa import Pipeline
 from pipeline_proxy.transformacao.escala import EscalaLog
 from pipeline_proxy.transformacao.etapa import EtapaTransformacao, ResumoTransformacao
-
+from pipeline_proxy.carga.etapa import EtapaCarga
 
 def criar_fonte(config: Config) -> FonteDados:
     return AlphaVantageClient(config.api_key, timeout_s=config.timeout_s)
@@ -53,18 +52,19 @@ def main() -> None:
     fonte = criar_fonte(config)
     estado = RepositorioEstadoJson(config.dir_dados / "estado.json")
     transformacao = EtapaTransformacao(escala_volume=EscalaLog())
-    pipeline = Pipeline([EtapaExtracao(fonte, estado), transformacao])
+    carga = EtapaCarga(config.dir_dados / "cotacoes.db")
 
+    pipeline = Pipeline([EtapaExtracao(fonte, estado),transformacao, carga])
+    
     dados = pipeline.executar(
         RequisicaoExtracao(simbolos=config.simbolos, modo=config.modo, tamanho=config.tamanho)
     )
-
     imprimir_resumo(config.simbolos, dados, transformacao.resumo)
     if isinstance(fonte, AlphaVantageClient):
         print(f"chamadas_reais={fonte.chamadas_reais}")
     for nome, segundos in pipeline.tempos_s.items():
         print(f"tempo[{nome}]={segundos:.3f}s")
-
-
+    print(f"carga: {carga.linhas_afetadas} registros inseridos/atualizados no SQLite")
+   
 if __name__ == "__main__":
     main()
