@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 import pandas as pd
 
+from pipeline_proxy import visualizacao
+from pipeline_proxy import visualizacao
 from pipeline_proxy.config import Config, carregar_config
 from pipeline_proxy.dominio import RequisicaoExtracao
 from pipeline_proxy.extracao.alpha_vantage import AlphaVantageClient
@@ -22,6 +24,7 @@ from pipeline_proxy.transformacao.escala import EscalaLog
 from pipeline_proxy.transformacao.etapa import EtapaTransformacao, ResumoTransformacao
 from pipeline_proxy.carga.etapa import EtapaCarga
 from pipeline_proxy.modelagem.etapa import EtapaModelagem  
+from pipeline_proxy.visualizacao.etapa import EtapaVisualizacao
 
 def criar_fonte(config: Config) -> FonteDados:
     return AlphaVantageClient(config.api_key, timeout_s=config.timeout_s)
@@ -59,20 +62,22 @@ def main() -> None:
     transformacao = EtapaTransformacao(escala_volume=EscalaLog())
     carga = EtapaCarga(config.dir_dados / "cotacoes.db", estado=estado)
     modelagem = EtapaModelagem(janela_media_movel=5)
+    visualizacao = EtapaVisualizacao(config.dir_dados)
     
-    pipeline = Pipeline([EtapaExtracao(fonte, estado),transformacao, carga, modelagem])
+    pipeline = Pipeline([EtapaExtracao(fonte, estado),transformacao, carga, modelagem, visualizacao])
     
     dados = pipeline.executar(
         RequisicaoExtracao(simbolos=config.simbolos, modo=config.modo, tamanho=config.tamanho)
     )
     imprimir_resumo(config.simbolos, dados, transformacao.resumo)
     imprimir_metricas(modelagem)
+    print(f"carga: {carga.linhas_afetadas} registros inseridos/atualizados no SQLite")
+    print(f"visualizacao: {len(visualizacao.arquivos_gerados)} arquivos gerados em {config.dir_dados}")
+       
     if isinstance(fonte, AlphaVantageClient):
         print(f"chamadas_reais={fonte.chamadas_reais}")
     for nome, segundos in pipeline.tempos_s.items():
         print(f"tempo[{nome}]={segundos:.3f}s")
-    print(f"carga: {carga.linhas_afetadas} registros inseridos/atualizados no SQLite")
-   
+    
 if __name__ == "__main__":
     main()
-
