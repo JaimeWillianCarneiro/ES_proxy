@@ -7,9 +7,17 @@ import pandas as pd
 from pipeline_proxy.nucleo.etapa import Etapa
 
 
+def _rotulo_moeda(simbolo: str) -> str:
+    """Retorna a moeda do eixo Y com base no sufixo do símbolo."""
+    if simbolo.upper().endswith(".SAO"):
+        return "R$"
+    return "US$"
+
+
 class EtapaVisualizacao(Etapa[pd.DataFrame, pd.DataFrame]):
-    def __init__(self, dir_saida: Path | str) -> None:
+    def __init__(self, dir_saida: Path | str, janela_media_movel: int = 5) -> None:
         self.dir_saida = Path(dir_saida)
+        self.janela_media_movel = janela_media_movel
         self.arquivos_gerados: list[Path] = []
 
     @property
@@ -18,6 +26,7 @@ class EtapaVisualizacao(Etapa[pd.DataFrame, pd.DataFrame]):
 
     def executar(self, entrada: pd.DataFrame) -> pd.DataFrame:
         if entrada.empty:
+            self.arquivos_gerados.clear()
             return entrada
 
         self.dir_saida.mkdir(parents=True, exist_ok=True)
@@ -38,6 +47,8 @@ class EtapaVisualizacao(Etapa[pd.DataFrame, pd.DataFrame]):
                 continue
 
             fig, ax = plt.subplots(figsize=(12, 6))
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
 
             # Preço Real
             ax.plot(g["data"], g["close"], label="Real (Close)", color="#1f77b4", linewidth=1.8)
@@ -56,7 +67,7 @@ class EtapaVisualizacao(Etapa[pd.DataFrame, pd.DataFrame]):
             ax.plot(
                 g["data"],
                 g["pred_media_movel"],
-                label="Prev. Média Móvel (k=5)",
+                label=f"Prev. Média Móvel (k={self.janela_media_movel})",
                 color="#2ca02c",
                 linestyle="-.",
                 alpha=0.8,
@@ -74,14 +85,15 @@ class EtapaVisualizacao(Etapa[pd.DataFrame, pd.DataFrame]):
                     label="Outlier identificado",
                 )
 
+            moeda = _rotulo_moeda(str(simbolo))
             ax.set_title(f"Cotações Reais × Previstas — {simbolo}", fontsize=14, fontweight="bold")
             ax.set_xlabel("Data", fontsize=11)
-            ax.set_ylabel("Preço de Fechamento", fontsize=11)
+            ax.set_ylabel(f"Preço de Fechamento ({moeda})", fontsize=11)
             ax.legend(loc="best")
 
             fig.tight_layout()
 
-            caminho_png = self.dir_saida / f"grafico_{simbolo.replace('.', '_')}.png"
+            caminho_png = self.dir_saida / f"grafico_{str(simbolo).replace('.', '_')}.png"
             fig.savefig(caminho_png, dpi=150)
             plt.close(fig)
 
