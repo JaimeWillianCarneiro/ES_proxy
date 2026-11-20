@@ -35,6 +35,7 @@ class Config:
     timeout_s: float
     dir_dados: Path
     retry: PoliticaRetry
+    usar_proxy: bool = False
 
 
 def carregar_config() -> Config:
@@ -54,4 +55,5 @@ def carregar_config() -> Config:
             backoff_base_s=float(os.getenv("RETRY_BACKOFF_BASE_S", "1")),
             backoff_max_s=float(os.getenv("RETRY_BACKOFF_MAX_S", "30")),
         ),
+        usar_proxy=os.getenv("USAR_PROXY", "false").strip().lower() == "true",
     )

@@ -1,7 +1,7 @@
 """Ponto de entrada do pipeline.
 
 É aqui que as dependências de cada etapa são escolhidas:
-- `criar_fonte()` decide a FonteDados (é onde o proxy bom vai entrar);
+- `criar_fonte()` seleciona o cliente direto ou o proxy de extração;
 - `EtapaTransformacao(escala_volume=...)` recebe o escalador (é onde o proxy
   ruim vai entrar).
 """
@@ -18,6 +18,7 @@ from pipeline_proxy.extracao.alpha_vantage import AlphaVantageClient
 from pipeline_proxy.extracao.estado import RepositorioEstadoJson
 from pipeline_proxy.extracao.extrator import EtapaExtracao
 from pipeline_proxy.extracao.fonte import FonteDados
+from pipeline_proxy.extracao.proxy_fonte import FonteDadosProxy
 from pipeline_proxy.nucleo.etapa import Pipeline
 from pipeline_proxy.transformacao.escala import EscalaLog
 from pipeline_proxy.transformacao.etapa import EtapaTransformacao, ResumoTransformacao
@@ -26,7 +27,17 @@ from pipeline_proxy.modelagem.etapa import EtapaModelagem
 from pipeline_proxy.visualizacao.etapa import EtapaVisualizacao
 
 def criar_fonte(config: Config) -> FonteDados:
-    return AlphaVantageClient(config.api_key, timeout_s=config.timeout_s)
+    def criar_cliente() -> AlphaVantageClient:
+        return AlphaVantageClient(config.api_key, timeout_s=config.timeout_s)
+
+    if config.usar_proxy:
+        return FonteDadosProxy(
+            fabrica_cliente=criar_cliente,
+            api_key=config.api_key,
+            dir_cache=config.dir_dados / "cache",
+            politica_retry=config.retry,
+        )
+    return criar_cliente()
 
 def imprimir_metricas(modelagem: EtapaModelagem) -> None:
     for simbolo, modelos in modelagem.resultado.metricas.items():
@@ -73,7 +84,7 @@ def main() -> None:
     print(f"carga: {carga.linhas_afetadas} registros inseridos/atualizados no SQLite")
     print(f"visualizacao: {len(visualizacao.arquivos_gerados)} arquivos gerados em {config.dir_dados}")
        
-    if isinstance(fonte, AlphaVantageClient):
+    if isinstance(fonte, (AlphaVantageClient, FonteDadosProxy)):
         print(f"chamadas_reais={fonte.chamadas_reais}")
     for nome, segundos in pipeline.tempos_s.items():
         print(f"tempo[{nome}]={segundos:.3f}s")
