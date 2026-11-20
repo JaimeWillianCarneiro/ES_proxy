@@ -22,8 +22,8 @@ ação (ex.: PETR4) a partir do histórico diário?
 | Branch | Conteúdo |
 |---|---|
 | `main` | pipeline "normal", **sem proxy** (o "antes") |
-| `proxy-bom` | `main` + proxy na Extração (cache, validação da chave, lazy loading, retry) |
-| `proxy-ruim` | `main` + proxy na Transformação que só repassa a chamada (indireção sem função) |
+| `Aplication-Proxy` | 	versão refatorada, com proxy na extração habilitado por USAR_PROXY=true |
+| `proxy-ruim(ideia)` | `main` + proxy na Transformação que só repassa a chamada (indireção sem função) |
 
 Os proxies entram **só depois que o pipeline inteiro estiver pronto** no `main`.
 
@@ -92,6 +92,41 @@ Principais variáveis do `.env` (lista completa em `.env.example`):
 | `ALPHAVANTAGE_API_KEY` | `ABC123...` | sua chave |
 | `SIMBOLOS` | `PETR4.SAO,VALE3.SAO` | ações a baixar |
 | `MODO` | `completa` / `incremental` | tudo, ou só datas novas desde a última execução |
+
+## Comparar o pipeline com e sem proxy
+Na branch `Aplication_Proxy`, configure a chave no `.env`. Os comandos abaixo
+usam IBM em modo completo e criam um diretório temporário para começar com o cache vazio.
+
+```bash
+(
+    DIR_DADOS="$(mktemp -d)" || exit 1
+    export DIR_DADOS SIMBOLOS=IBM MODO=completa TAMANHO=compact
+
+    USAR_PROXY=false uv run python main.py
+    USAR_PROXY=false uv run python main.py
+    USAR_PROXY=true uv run python main.py
+    USAR_PROXY=true uv run python main.py
+)
+```
+
+Quando as consultas têm sucesso na primeira tentativa, o contador
+`chamadas_reais` mostra os seguintes valores:
+
+| Configuração | Primeira execução | Segunda execução |
+|---|---:|---:|
+| Cliente direto | 1 | 1 |
+| Proxy | 1 | 0 |
+
+A segunda execução com proxy reutiliza o lote bruto guardado em
+`${DIR_DADOS}/cache`. O lote vale por 12 horas. Durante esse período, uma nova
+cotação pode demorar a aparecer. Com os mesmos dados de entrada, o CSV e as
+métricas coincidem nas duas versões.
+
+Para testar o cache e os reintentos sem fazer chamadas à API:
+
+```bash
+uv run pytest -q tests/test_proxy_fonte.py
+```
 
 ## Estrutura
 
