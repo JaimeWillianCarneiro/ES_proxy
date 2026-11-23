@@ -12,7 +12,6 @@ import logging
 import pandas as pd
 
 from pipeline_proxy import visualizacao
-from pipeline_proxy import visualizacao
 from pipeline_proxy.config import Config, carregar_config
 from pipeline_proxy.dominio import RequisicaoExtracao
 from pipeline_proxy.extracao.alpha_vantage import AlphaVantageClient
