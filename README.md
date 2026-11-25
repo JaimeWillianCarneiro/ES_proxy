@@ -5,16 +5,6 @@ Trabalho em grupo de Engenharia de Software (FGV) sobre o padrão de projeto
 etapa de Extração é refatorada com o padrão, e um *toy problem* independente
 ensina o Proxy.
 
-## Integrantes
-
-| Nome completo | Código do aluno |
-|---|---|
-| _PREENCHER_ | _PREENCHER_ |
-| _PREENCHER_ | _PREENCHER_ |
-| _PREENCHER_ | _PREENCHER_ |
-| _PREENCHER_ | _PREENCHER_ |
-| _PREENCHER_ | _PREENCHER_ |
-
 ## Onde está cada item da entrega
 
 | Item | Onde está |
